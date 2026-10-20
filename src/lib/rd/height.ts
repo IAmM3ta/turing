@@ -79,18 +79,35 @@ export function bakeHeight(
   src: Float32Array,
   cols: number,
   rows: number,
-  opts: { gamma: number; invert: boolean; smooth: number },
+  opts: { gamma: number; invert: boolean; smooth: number; crisp?: number },
 ) {
   let cur = src;
   const passes = Math.max(0, Math.min(6, Math.round(opts.smooth)));
   for (let pass = 0; pass < passes; pass++) cur = boxBlur(cur, cols, rows);
   const out = new Float32Array(cur.length);
   const gamma = Math.max(0.05, opts.gamma);
+  const crisp = Math.min(1, Math.max(0, opts.crisp ?? 0));
+  const lo = 0.04 + 0.12 * crisp;
+  const hi = lo + (0.22 - 0.2 * crisp);
+  const shaped = new Float32Array(cur.length);
+  let peak = 0;
   for (let i = 0; i < cur.length; i++) {
     let v = cur[i] ?? 0;
     if (opts.invert) v = 1 - v;
     v = Math.min(1, Math.max(0, v));
-    out[i] = Math.pow(v, gamma);
+    v = Math.pow(v, gamma);
+    shaped[i] = v;
+    if (v > peak) peak = v;
+  }
+  const gain = peak > 0.05 && peak < hi ? Math.min(4, (hi + 0.04) / peak) : 1;
+  for (let i = 0; i < shaped.length; i++) {
+    let v = Math.min(1, (shaped[i] ?? 0) * gain);
+    if (crisp > 0) {
+      const x = Math.min(1, Math.max(0, (v - lo) / Math.max(1e-4, hi - lo)));
+      const edge = x * x * (3 - 2 * x);
+      v = v * (1 - crisp) + edge * crisp;
+    }
+    out[i] = v;
   }
   return out;
 }

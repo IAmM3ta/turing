@@ -1,4 +1,4 @@
-import { foldIndex, seedMode, type FoldId, type SeedStyle } from "@/lib/rd/presets";
+import { foldIndex, isRadial, mirrorCount, seedMode, type FoldId, type SeedStyle } from "@/lib/rd/presets";
 
 export const SIM_SIZE = 288;
 
@@ -44,10 +44,15 @@ const FOLD = `#version 300 es
 precision highp float;
 uniform sampler2D uState;
 uniform int uFold;
+uniform float uSides;
 in vec2 vUv;
 out vec4 fragColor;
 const float TAU = 6.28318530718;
 const float PI = 3.14159265359;
+
+float sides() {
+  return max(3.0, uSides);
+}
 
 bool inDomain(vec2 uv) {
   if (uFold == 1) return uv.x >= 0.5;
@@ -56,19 +61,17 @@ bool inDomain(vec2 uv) {
   vec2 p = uv * 2.0 - 1.0;
   if (dot(p, p) < 1e-8) return true;
   float ang = mod(atan(p.y, p.x) + TAU, TAU);
-  float n = uFold == 4 ? 3.0 : uFold == 5 ? 6.0 : 8.0;
-  return ang <= (PI / n) + 0.0015;
+  return ang <= (PI / sides()) + 0.0015;
 }
 
 vec2 foldUv(vec2 uv) {
   if (uFold == 1) return vec2(max(uv.x, 1.0 - uv.x), uv.y);
   if (uFold == 2) return vec2(uv.x, max(uv.y, 1.0 - uv.y));
   if (uFold == 3) return vec2(max(uv.x, 1.0 - uv.x), max(uv.y, 1.0 - uv.y));
-  float n = uFold == 4 ? 3.0 : uFold == 5 ? 6.0 : 8.0;
   vec2 p = uv * 2.0 - 1.0;
   float r = length(p);
   float ang = mod(atan(p.y, p.x) + TAU, TAU);
-  float wedge = PI / n;
+  float wedge = PI / sides();
   float m = mod(ang, wedge * 2.0);
   if (m > wedge) m = wedge * 2.0 - m;
   vec2 q = vec2(cos(m), sin(m)) * r;
@@ -133,7 +136,7 @@ out vec4 fragColor;
 void main() {
   vec2 st = texture(uState, vUv).rg;
   float d = distance(vUv, uPoint);
-  float s = smoothstep(uRadius, uRadius * 0.35, d);
+  float s = smoothstep(uRadius, uRadius * 0.82, d);
   if (uErase > 0.5) {
     st.r = mix(st.r, 1.0, s);
     st.g = mix(st.g, 0.0, s);
@@ -145,24 +148,43 @@ void main() {
 }
 `;
 
+const IMAGE = `#version 300 es
+precision highp float;
+uniform sampler2D uImage;
+in vec2 vUv;
+out vec4 fragColor;
+void main() {
+  float L = texture(uImage, vec2(vUv.x, 1.0 - vUv.y)).r;
+  float B = smoothstep(0.22, 0.55, L);
+  float A = 1.0 - 0.45 * B;
+  fragColor = vec4(A, B, 0.0, 1.0);
+}
+`;
+
 const DISPLAY = `#version 300 es
 precision highp float;
 uniform sampler2D uState;
 uniform vec2 uTexel;
+uniform vec3 uInk;
+uniform vec3 uFilament;
+uniform float uCrisp;
 in vec2 vUv;
 out vec4 fragColor;
 void main() {
-  float b = texture(uState, vUv).g;
-  float bx = texture(uState, vUv + vec2(uTexel.x, 0.0)).g;
-  float by = texture(uState, vUv + vec2(0.0, uTexel.y)).g;
-  float light = clamp(0.62 + (bx - b) * 5.5 + (by - b) * 4.0, 0.35, 1.35);
-  vec3 ink = vec3(0.047, 0.043, 0.035);
-  vec3 bone = vec3(0.953, 0.918, 0.847);
-  vec3 brass = vec3(0.831, 0.651, 0.337);
-  float t = smoothstep(0.05, 0.62, b);
-  vec3 col = mix(ink, bone, t);
-  col = mix(col, brass, smoothstep(0.28, 0.9, b));
-  col *= light;
+  vec2 size = 1.0 / uTexel;
+  vec2 p = vUv * size - 0.5;
+  vec2 i = floor(p);
+  vec2 f = p - i;
+  float b00 = texture(uState, (i + 0.5) * uTexel).g;
+  float b10 = texture(uState, (i + vec2(1.5, 0.5)) * uTexel).g;
+  float b01 = texture(uState, (i + vec2(0.5, 1.5)) * uTexel).g;
+  float b11 = texture(uState, (i + vec2(1.5, 1.5)) * uTexel).g;
+  float b = mix(mix(b00, b10, f.x), mix(b01, b11, f.x), f.y);
+  float crisp = clamp(uCrisp, 0.0, 1.0);
+  float lo = mix(0.04, 0.16, crisp);
+  float hi = lo + mix(0.22, 0.02, crisp);
+  float t = smoothstep(lo, hi, b);
+  vec3 col = mix(uInk, uFilament, t);
   fragColor = vec4(col, 1.0);
 }
 `;
@@ -187,6 +209,7 @@ export type FieldParams = {
   feed: number;
   kill: number;
   fold: FoldId;
+  sides: number;
   edge: "tile" | "island";
   seed: SeedStyle;
   seedNonce: number;
@@ -196,17 +219,17 @@ function clamp01(n: number) {
   return Math.min(1, Math.max(0, n));
 }
 
-export function intoDomain(u: number, v: number, fold: FoldId): [number, number] {
+export function intoDomain(u: number, v: number, fold: FoldId, sides = 6): [number, number] {
   if (fold === "split") return [Math.max(u, 1 - u), v];
   if (fold === "stack") return [u, Math.max(v, 1 - v)];
   if (fold === "quad") return [Math.max(u, 1 - u), Math.max(v, 1 - v)];
-  if (fold === "open") return [u, v];
-  const n = fold === "tri" ? 3 : fold === "hex" ? 6 : 8;
+  if (!isRadial(fold)) return [u, v];
+  const n = mirrorCount(fold, sides);
   const x = u * 2 - 1;
   const y = v * 2 - 1;
   const r = Math.hypot(x, y);
   const tau = Math.PI * 2;
-  let ang = (Math.atan2(y, x) + tau) % tau;
+  const ang = (Math.atan2(y, x) + tau) % tau;
   const wedge = Math.PI / n;
   let m = ang % (wedge * 2);
   if (m > wedge) m = wedge * 2 - m;
@@ -218,18 +241,23 @@ export class RdEngine {
   readonly simSize = SIM_SIZE;
   cycles = 0;
   private gl: WebGL2RenderingContext;
-  private vao: WebGLVertexArrayObject;
-  private textures: [WebGLTexture, WebGLTexture];
-  private frames: [WebGLFramebuffer, WebGLFramebuffer];
-  private readTex: WebGLTexture;
-  private readFbo: WebGLFramebuffer;
+  private vao!: WebGLVertexArrayObject;
+  private textures!: [WebGLTexture, WebGLTexture];
+  private frames!: [WebGLFramebuffer, WebGLFramebuffer];
+  private readTex!: WebGLTexture;
+  private readFbo!: WebGLFramebuffer;
   private front = 0;
-  private sim: Prog;
-  private fold: Prog;
-  private seed: Prog;
-  private stamp: Prog;
-  private display: Prog;
-  private read: Prog;
+  private wrapMode = -1;
+  lost = false;
+  onRestored: (() => void) | null = null;
+  private sim!: Prog;
+  private fold!: Prog;
+  private seed!: Prog;
+  private stamp!: Prog;
+  private display!: Prog;
+  private read!: Prog;
+  private image!: Prog;
+  private lumaTex: WebGLTexture | null = null;
   private view = { x: 0, y: 0, s: 2 };
 
   constructor(canvas: HTMLCanvasElement) {
@@ -245,25 +273,45 @@ export class RdEngine {
     }
     this.canvas = canvas;
     this.gl = gl;
+    canvas.addEventListener("webglcontextlost", (event) => {
+      event.preventDefault();
+      this.lost = true;
+    });
+    canvas.addEventListener("webglcontextrestored", () => {
+      this.lost = false;
+      this.boot();
+      this.onRestored?.();
+    });
+    this.boot();
+  }
+
+  /** Allocate textures and shaders. Safe to call again after the context returns. */
+  private boot() {
+    const gl = this.gl;
     const vao = gl.createVertexArray();
     if (!vao) throw new Error("Could not create a vertex array.");
     this.vao = vao;
     gl.bindVertexArray(vao);
     gl.disable(gl.DEPTH_TEST);
     gl.disable(gl.BLEND);
+    gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
     gl.pixelStorei(gl.PACK_ALIGNMENT, 1);
 
     this.textures = [this.makeFloatTex(), this.makeFloatTex()];
     this.frames = [this.attach(this.textures[0]), this.attach(this.textures[1])];
     this.readTex = this.makeByteTex();
     this.readFbo = this.attach(this.readTex);
+    this.lumaTex = null;
+    this.front = 0;
+    this.wrapMode = -1;
 
     this.sim = this.program(SIM, ["uState", "uTexel", "uFeed", "uKill", "uDelta"]);
-    this.fold = this.program(FOLD, ["uState", "uFold"]);
+    this.fold = this.program(FOLD, ["uState", "uFold", "uSides"]);
     this.seed = this.program(SEED, ["uMode", "uSeed"]);
     this.stamp = this.program(STAMP, ["uState", "uPoint", "uRadius", "uErase"]);
-    this.display = this.program(DISPLAY, ["uState", "uTexel"]);
+    this.display = this.program(DISPLAY, ["uState", "uTexel", "uInk", "uFilament", "uCrisp"]);
     this.read = this.program(READ, ["uState"]);
+    this.image = this.program(IMAGE, ["uImage"]);
     this.clear();
   }
 
@@ -273,13 +321,15 @@ export class RdEngine {
     gl.deleteTexture(this.readTex);
     for (const fbo of this.frames) gl.deleteFramebuffer(fbo);
     gl.deleteFramebuffer(this.readFbo);
-    for (const prog of [this.sim, this.fold, this.seed, this.stamp, this.display, this.read]) {
+    if (this.lumaTex) gl.deleteTexture(this.lumaTex);
+    for (const prog of [this.sim, this.fold, this.seed, this.stamp, this.display, this.read, this.image]) {
       gl.deleteProgram(prog.program);
     }
     gl.deleteVertexArray(this.vao);
   }
 
   clear() {
+    if (this.lost) return;
     this.pass(this.seed, 1 - this.front, this.simSize, () => {
       this.uniform1f(this.seed, "uMode", -1);
       this.uniform1f(this.seed, "uSeed", 0);
@@ -288,16 +338,18 @@ export class RdEngine {
   }
 
   reseed(params: FieldParams) {
+    if (this.lost) return;
     this.pass(this.seed, 1 - this.front, this.simSize, () => {
       this.uniform1f(this.seed, "uMode", seedMode(params.seed));
       this.uniform1f(this.seed, "uSeed", params.seedNonce * 17.13 + 3.7);
     });
-    if (params.fold !== "open") this.passFold(params.fold);
+    if (params.fold !== "open") this.passFold(params.fold, params.sides);
     const warm = params.seed === "dust" ? 160 : 110;
     this.step(warm, params);
   }
 
   step(count: number, params: FieldParams) {
+    if (this.lost) return;
     const wrap =
       params.fold === "open" && params.edge === "tile" ? this.gl.REPEAT : this.gl.CLAMP_TO_EDGE;
     this.setWrap(wrap);
@@ -310,13 +362,14 @@ export class RdEngine {
         this.uniform1f(this.sim, "uKill", params.kill);
         this.uniform1f(this.sim, "uDelta", 1);
       });
-      if (params.fold !== "open") this.passFold(params.fold);
+      if (params.fold !== "open") this.passFold(params.fold, params.sides);
     }
     this.cycles += n;
   }
 
-  paint(u: number, v: number, radius: number, erase: boolean, fold: FoldId) {
-    const point = intoDomain(u, v, fold);
+  paint(u: number, v: number, radius: number, erase: boolean, fold: FoldId, sides = 6) {
+    if (this.lost) return;
+    const point = intoDomain(u, v, fold, sides);
     this.setWrap(this.gl.CLAMP_TO_EDGE);
     this.pass(this.stamp, 1 - this.front, this.simSize, () => {
       this.bindFront(this.stamp);
@@ -324,21 +377,49 @@ export class RdEngine {
       this.uniform1f(this.stamp, "uRadius", radius);
       this.uniform1f(this.stamp, "uErase", erase ? 1 : 0);
     });
-    if (fold !== "open") this.passFold(fold);
+    if (fold !== "open") this.passFold(fold, sides);
   }
 
-  draw() {
+  /** Plant a grayscale image as the chemical seed. Values are 0..255. */
+  seedFromLuma(luma: Uint8Array, fold: FoldId, sides: number) {
+    if (this.lost) return;
     const gl = this.gl;
-    this.fit();
+    const n = this.simSize * this.simSize;
+    if (!this.lumaTex) this.lumaTex = this.makeByteTex();
+    const rgba = new Uint8Array(n * 4);
+    for (let i = 0; i < n; i++) {
+      const v = luma[i] ?? 0;
+      rgba[i * 4] = v;
+      rgba[i * 4 + 3] = 255;
+    }
+    gl.bindTexture(gl.TEXTURE_2D, this.lumaTex);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, this.simSize, this.simSize, 0, gl.RGBA, gl.UNSIGNED_BYTE, rgba);
+    this.pass(this.image, 1 - this.front, this.simSize, () => {
+      gl.activeTexture(gl.TEXTURE0);
+      gl.bindTexture(gl.TEXTURE_2D, this.lumaTex);
+      const loc = this.image.loc.uImage;
+      if (loc) gl.uniform1i(loc, 0);
+    });
+    if (fold !== "open") this.passFold(fold, sides);
+    this.cycles = 0;
+  }
+
+  draw(ink: [number, number, number], filament: [number, number, number], crisp: number) {
+    if (this.lost) return;
+    const gl = this.gl;
     gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    this.fit();
     gl.viewport(0, 0, this.canvas.width, this.canvas.height);
-    gl.clearColor(0.047, 0.043, 0.035, 1);
+    gl.clearColor(ink[0], ink[1], ink[2], 1);
     gl.clear(gl.COLOR_BUFFER_BIT);
     gl.viewport(this.view.x, this.view.y, this.view.s, this.view.s);
     gl.useProgram(this.display.program);
     gl.bindVertexArray(this.vao);
     this.bindFront(this.display);
     this.uniform2f(this.display, "uTexel", 1 / this.simSize, 1 / this.simSize);
+    this.uniform3f(this.display, "uInk", ink[0], ink[1], ink[2]);
+    this.uniform3f(this.display, "uFilament", filament[0], filament[1], filament[2]);
+    this.uniform1f(this.display, "uCrisp", crisp);
     gl.drawArrays(gl.TRIANGLES, 0, 3);
   }
 
@@ -346,11 +427,13 @@ export class RdEngine {
   readField(): Float32Array {
     const gl = this.gl;
     const res = this.simSize;
+    if (this.lost) return new Float32Array(res * res);
     this.pass(this.read, this.readFbo, res, () => {
       this.bindFront(this.read);
     }, true);
     const buf = new Uint8Array(res * res * 4);
     gl.readPixels(0, 0, res, res, gl.RGBA, gl.UNSIGNED_BYTE, buf);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
     const out = new Float32Array(res * res);
     for (let y = 0; y < res; y++) {
       const src = res - 1 - y;
@@ -360,7 +443,8 @@ export class RdEngine {
   }
 
   saveImage(filename: string) {
-    this.draw();
+    if (this.lost) return;
+    this.draw([0.027, 0.027, 0.024], [0.957, 0.945, 0.918], 0.82);
     this.canvas.toBlob((blob) => {
       if (!blob) return;
       const url = URL.createObjectURL(blob);
@@ -370,6 +454,18 @@ export class RdEngine {
       a.click();
       URL.revokeObjectURL(url);
     }, "image/png");
+  }
+
+  /** Small JPEG of the bath, for a saved piece. */
+  thumbnail(): string {
+    if (this.lost) return "";
+    const out = document.createElement("canvas");
+    out.width = 128;
+    out.height = 128;
+    const ctx = out.getContext("2d");
+    if (!ctx) return "";
+    ctx.drawImage(this.canvas, 0, 0, this.canvas.width, this.canvas.height, 0, 0, 128, 128);
+    return out.toDataURL("image/jpeg", 0.62);
   }
 
   pointerUv(clientX: number, clientY: number): [number, number] | null {
@@ -384,11 +480,12 @@ export class RdEngine {
     return [u, v];
   }
 
-  private passFold(fold: FoldId) {
+  private passFold(fold: FoldId, sides: number) {
     this.setWrap(this.gl.CLAMP_TO_EDGE);
     this.pass(this.fold, 1 - this.front, this.simSize, () => {
       this.bindFront(this.fold);
       this.uniform1i(this.fold, "uFold", foldIndex(fold));
+      this.uniform1f(this.fold, "uSides", mirrorCount(fold, sides));
     });
   }
 
@@ -405,7 +502,10 @@ export class RdEngine {
   }
 
   private setWrap(mode: number) {
+    if (mode === this.wrapMode) return;
+    this.wrapMode = mode;
     const gl = this.gl;
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
     for (const tex of this.textures) {
       gl.bindTexture(gl.TEXTURE_2D, tex);
       gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, mode);
@@ -452,6 +552,11 @@ export class RdEngine {
   private uniform2f(prog: Prog, name: string, x: number, y: number) {
     const loc = prog.loc[name];
     if (loc) this.gl.uniform2f(loc, x, y);
+  }
+
+  private uniform3f(prog: Prog, name: string, x: number, y: number, z: number) {
+    const loc = prog.loc[name];
+    if (loc) this.gl.uniform3f(loc, x, y, z);
   }
 
   private makeFloatTex() {

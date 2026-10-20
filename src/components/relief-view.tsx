@@ -1,6 +1,7 @@
 import { useEffect, useRef } from "react";
 import type { Material } from "three";
 import { buildPiece, type PieceSpec } from "@/lib/rd/export";
+import { filamentById } from "@/lib/rd/filaments";
 import { bakeHeight, frameHeight, plateGrid } from "@/lib/rd/height";
 import { SIM_SIZE } from "@/lib/rd/engine";
 import { useStudio, type FormaApi } from "@/lib/studio-store";
@@ -110,11 +111,15 @@ export function ReliefView({ apiRef }: Props) {
         if (dead) return;
         const state = useStudio.getState();
         const raw = apiRef.current?.readField();
+        const filament = filamentById(state.filamentId);
+        const plastic = filament.color;
+        surfaceMat.color.set(plastic);
+        surfaceMat.roughness = filament.id === "black" ? 0.45 : 0.55;
+        surfaceMat.metalness = 0.02;
+        surfaceMat.needsUpdate = true;
+        cutMat.color.set(plastic);
         const classic = state.make === "relief" && state.outline === "rect";
         if (classic) {
-          surfaceMat.color.set(0xe6d3b0);
-          surfaceMat.roughness = 0.62;
-          surfaceMat.needsUpdate = true;
           plinthMat.color.set(0x3a3428);
           const { cols, rows } = plateGrid(state.plateW, state.plateD, 80);
           const framed = raw
@@ -124,6 +129,7 @@ export function ReliefView({ apiRef }: Props) {
             gamma: state.gamma,
             invert: state.invert,
             smooth: state.smooth,
+            crisp: state.crisp,
           });
           const amp = state.reliefMm * (state.boost ? 2.5 : 1);
           const positions = new Float32Array(cols * rows * 3);
@@ -167,9 +173,6 @@ export function ReliefView({ apiRef }: Props) {
         } else if (state.make === "sheet") {
           plinthMat.color.set(0x6b4228);
         } else {
-          surfaceMat.color.set(state.outline === "hex" ? 0xc4a574 : 0xe6d3b0);
-          surfaceMat.roughness = state.outline === "hex" ? 0.78 : 0.62;
-          surfaceMat.needsUpdate = true;
           plinthMat.color.set(0x2a2418);
         }
         if (!raw) return;
@@ -183,13 +186,26 @@ export function ReliefView({ apiRef }: Props) {
 
       apply();
       let sig = "";
+      let filamentSeen = "";
+      const tint = () => {
+        const filament = filamentById(useStudio.getState().filamentId);
+        surfaceMat.color.set(filament.color);
+        cutMat.color.set(filament.color);
+        surfaceMat.roughness = filament.id === "black" ? 0.42 : 0.55;
+        surfaceMat.metalness = filament.id === "black" ? 0.08 : 0.02;
+      };
       const unsub = useStudio.subscribe((state) => {
+        if (state.filamentId !== filamentSeen) {
+          filamentSeen = state.filamentId;
+          tint();
+        }
         const next = [
           state.make,
           state.outline,
           state.gamma,
           state.invert,
           state.smooth,
+          state.crisp,
           state.plateW,
           state.plateD,
           state.baseMm,
@@ -205,6 +221,7 @@ export function ReliefView({ apiRef }: Props) {
           state.seam,
           state.edge,
           state.printRes,
+          state.hanger,
         ].join("|");
         if (next !== sig) {
           sig = next;
@@ -216,8 +233,8 @@ export function ReliefView({ apiRef }: Props) {
       let timer = 0;
       const poll = () => {
         if (dead) return;
-        apply();
-        timer = window.setTimeout(poll, 560);
+        if (!document.hidden) apply();
+        timer = window.setTimeout(poll, 1000);
       };
       timer = window.setTimeout(poll, 700);
 
@@ -306,6 +323,7 @@ function specOf(state: ReturnType<typeof useStudio.getState>): PieceSpec {
     gamma: state.gamma,
     invert: state.invert,
     smooth: state.smooth,
+    crisp: state.crisp,
     printRes: state.printRes,
     threshold: state.threshold,
     rimMm: state.rimMm,
@@ -317,5 +335,6 @@ function specOf(state: ReturnType<typeof useStudio.getState>): PieceSpec {
     seam: state.seam,
     wrap: state.edge === "tile",
     reliefScale: scale,
+    hanger: state.hanger && state.make !== "relief",
   };
 }

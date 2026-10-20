@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { RdEngine } from "@/lib/rd/engine";
-import { presetById } from "@/lib/rd/presets";
+import { filamentById, hexToRgb } from "@/lib/rd/filaments";
+import { mirrorCount, presetById } from "@/lib/rd/presets";
 import { useStudio, type FormaApi } from "@/lib/studio-store";
 
 type Props = {
@@ -42,6 +43,15 @@ export function FieldView({ apiRef }: Props) {
         eng.clear();
         useStudio.getState().setCycles(0);
       },
+      seedImage: (luma) => {
+        const state = useStudio.getState();
+        eng.seedFromLuma(luma, state.fold, mirrorCount(state.fold, state.foldSides));
+        useStudio.getState().setCycles(0);
+      },
+      thumbnail: () => eng.thumbnail(),
+    };
+    eng.onRestored = () => {
+      lastNonce = -1;
     };
     useStudio.getState().setEngineReady(true);
 
@@ -53,6 +63,7 @@ export function FieldView({ apiRef }: Props) {
           feed: state.feed,
           kill: state.kill,
           fold: state.fold,
+          sides: mirrorCount(state.fold, state.foldSides),
           edge: state.edge,
           seed: presetById(state.presetId).seed,
           seedNonce: state.seedNonce,
@@ -63,13 +74,17 @@ export function FieldView({ apiRef }: Props) {
         feed: state.feed,
         kill: state.kill,
         fold: state.fold,
+        sides: mirrorCount(state.fold, state.foldSides),
         edge: state.edge,
         seed: presetById(state.presetId).seed,
         seedNonce: state.seedNonce,
       };
       if (state.running && !document.hidden) eng.step(state.rate, params);
-      if (paint.active && paintUv) eng.paint(paintUv[0], paintUv[1], state.brush, state.erase, state.fold);
-      eng.draw();
+      if (paint.active && paintUv) {
+        eng.paint(paintUv[0], paintUv[1], state.brush, state.erase, state.fold, params.sides);
+      }
+      const filament = filamentById(state.filamentId);
+      eng.draw(hexToRgb(filament.bed), hexToRgb(filament.color), state.crisp);
       if (now - lastUi > 280 && alive) {
         lastUi = now;
         if (useStudio.getState().cycles !== eng.cycles) useStudio.getState().setCycles(eng.cycles);

@@ -6,6 +6,7 @@ export const FOLDS = [
   { id: "tri", name: "Tri", note: "Three-fold kaleidoscope." },
   { id: "hex", name: "Hex", note: "Six-fold kaleidoscope. Strong for medallions." },
   { id: "oct", name: "Oct", note: "Eight-fold kaleidoscope." },
+  { id: "kaleido", name: "Kaleidoscope", note: "Pick how many wedges meet in the middle." },
 ] as const;
 
 export type FoldId = (typeof FOLDS)[number]["id"];
@@ -59,4 +60,17 @@ export function seedMode(style: SeedStyle): number {
 export function foldIndex(id: FoldId): number {
   const index = FOLDS.findIndex((fold) => fold.id === id);
   return index < 0 ? 0 : index;
+}
+
+export function isRadial(id: FoldId): boolean {
+  return id === "tri" || id === "hex" || id === "oct" || id === "kaleido";
+}
+
+/** Wedge count for a kaleidoscope. Bilateral folds ignore this. */
+export function mirrorCount(id: FoldId, custom: number): number {
+  if (id === "tri") return 3;
+  if (id === "hex") return 6;
+  if (id === "oct") return 8;
+  const n = Math.round(custom);
+  return Math.min(12, Math.max(3, Number.isFinite(n) ? n : 6));
 }

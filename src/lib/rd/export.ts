@@ -17,6 +17,7 @@ export type PieceSpec = {
   gamma: number;
   invert: boolean;
   smooth: number;
+  crisp: number;
   printRes: number;
   threshold: number;
   rimMm: number;
@@ -28,6 +29,7 @@ export type PieceSpec = {
   seam: SeamId;
   wrap: boolean;
   reliefScale: number;
+  hanger: boolean;
 };
 
 export type BuiltPiece = {
@@ -59,13 +61,14 @@ export function buildPiece(raw: Float32Array, spec: PieceSpec, quality: "preview
   for (let row = 0; row < rowsN; row++) {
     for (let col = 0; col < colsN; col++) {
       const window = sheet ? tileWindow(col, row, colsN, rowsN, spec.seam) : frameWindow(tileW, tileD);
-      const outline: OutlineId = sheet ? "rect" : spec.outline;
+      const outline: OutlineId = spec.outline;
       const ox = -spanW / 2 + tileW / 2 + col * (tileW + gap);
       const oy = spanD / 2 - tileD / 2 - row * (tileD + gap);
       const sampled = bakeHeight(sampleGrid(raw, SIM_SIZE, grid.cols, grid.rows, window, sheet && spec.wrap), grid.cols, grid.rows, {
         gamma: spec.gamma,
         invert: spec.invert,
         smooth: spec.smooth,
+        crisp: spec.crisp,
       });
       if (carved) {
         const tile = reliefMesh(sampled, grid.cols, grid.rows, {
@@ -88,6 +91,7 @@ export function buildPiece(raw: Float32Array, spec: PieceSpec, quality: "preview
           threshold: spec.threshold,
           rimMm: spec.rimMm,
           wall: spec.wall,
+          hanger: spec.hanger && !carved,
         });
         dropped += built.dropped;
         const tile = latticeMesh(built.mask, grid.cols, grid.rows, {

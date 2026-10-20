@@ -1,17 +1,23 @@
 import { useEffect, useRef } from "react";
-import { Download, Pause, Play, RotateCcw, Shuffle, Trash2 } from "lucide-react";
+import { Download, ImagePlus, Pause, Play, RotateCcw, Shuffle, Trash2 } from "lucide-react";
 import { FieldView } from "@/components/field-view";
 import { ReliefView } from "@/components/relief-view";
+import { SavedPieces } from "@/components/saved-pieces";
 import { Button } from "@/components/ui/button";
+import { UserButton } from "@/lib/auth/gates";
+import { useCurrentUserState } from "@/lib/auth/use-current-user";
 import { bakeHeight, frameHeight, plateGrid } from "@/lib/rd/height";
 import { SIM_SIZE } from "@/lib/rd/engine";
 import { buildPiece, type PieceSpec } from "@/lib/rd/export";
-import { FOLDS, foldNote, presetById, PRESETS, type FoldId } from "@/lib/rd/presets";
-import { RECIPES, type Recipe } from "@/lib/rd/recipes";
+import { FILAMENTS } from "@/lib/rd/filaments";
+import { imageLuma } from "@/lib/rd/image-seed";
+import { FOLDS, isRadial, mirrorCount, presetById, PRESETS, type FoldId } from "@/lib/rd/presets";
+import { RECIPES, WEAR, type Recipe } from "@/lib/rd/recipes";
 import type { OutlineId } from "@/lib/rd/shape";
 import { formatBytes, heightToStl, meshToStl, triangleCount } from "@/lib/rd/stl";
 import { useStudio, type FormaApi } from "@/lib/studio-store";
 import { cn } from "@/lib/utils";
+import { Link } from "@tanstack/react-router";
 
 export function Studio() {
   const apiRef = useRef<FormaApi | null>(null);
@@ -86,6 +92,7 @@ function Controls({ apiRef }: { apiRef: { current: FormaApi | null } }) {
   const kill = useStudio((s) => s.kill);
   const rate = useStudio((s) => s.rate);
   const fold = useStudio((s) => s.fold);
+  const foldSides = useStudio((s) => s.foldSides);
   const edge = useStudio((s) => s.edge);
   const running = useStudio((s) => s.running);
   const brush = useStudio((s) => s.brush);
@@ -93,6 +100,7 @@ function Controls({ apiRef }: { apiRef: { current: FormaApi | null } }) {
   const gamma = useStudio((s) => s.gamma);
   const invert = useStudio((s) => s.invert);
   const smooth = useStudio((s) => s.smooth);
+  const crisp = useStudio((s) => s.crisp);
   const plateW = useStudio((s) => s.plateW);
   const plateD = useStudio((s) => s.plateD);
   const baseMm = useStudio((s) => s.baseMm);
@@ -109,6 +117,8 @@ function Controls({ apiRef }: { apiRef: { current: FormaApi | null } }) {
   const sheetCols = useStudio((s) => s.sheetCols);
   const sheetRows = useStudio((s) => s.sheetRows);
   const seam = useStudio((s) => s.seam);
+  const filamentId = useStudio((s) => s.filamentId);
+  const hanger = useStudio((s) => s.hanger);
   const ready = useStudio((s) => s.engineReady);
   const notice = useStudio((s) => s.notice);
 
@@ -155,6 +165,7 @@ function Controls({ apiRef }: { apiRef: { current: FormaApi | null } }) {
         gamma: state.gamma,
         invert: state.invert,
         smooth: state.smooth,
+        crisp: state.crisp,
       });
       const buffer = heightToStl(baked, plate.cols, plate.rows, {
         width: state.plateW,
@@ -191,6 +202,31 @@ function Controls({ apiRef }: { apiRef: { current: FormaApi | null } }) {
   return (
     <div className="flex flex-col lg:min-h-0 lg:flex-1">
       <div className="grid gap-5 p-4 lg:min-h-0 lg:flex-1 lg:overflow-y-auto">
+        <AccountRow />
+        <FilamentPick id={filamentId} />
+        <Mirror fold={fold} sides={foldSides} />
+        <WearNow
+          now={{
+            presetId,
+            make,
+            outline,
+            fold,
+            foldSides,
+            edge,
+            plateW,
+            threshold,
+            rimMm,
+            reliefMm,
+            wall,
+            invert,
+            sheetCols,
+            sheetRows,
+            seam,
+            hanger,
+          }}
+        />
+        <SavedPieces apiRef={apiRef} />
+
         <section>
           <div className="mb-2 flex items-baseline justify-between gap-3">
             <h2 className="text-xl">Piece</h2>
@@ -213,6 +249,8 @@ function Controls({ apiRef }: { apiRef: { current: FormaApi | null } }) {
                 sheetCols,
                 sheetRows,
                 seam,
+                hanger,
+                foldSides,
               });
               return (
                 <button
@@ -319,27 +357,6 @@ function Controls({ apiRef }: { apiRef: { current: FormaApi | null } }) {
           </div>
         </section>
 
-        <section>
-          <h2 className="mb-2 text-xl">Fold</h2>
-          <div className="grid grid-cols-4 gap-2">
-            {FOLDS.map((item) => (
-              <button
-                key={item.id}
-                type="button"
-                aria-pressed={item.id === fold}
-                onClick={() => useStudio.getState().setFold(item.id as FoldId)}
-                className={cn(
-                  "h-11 rounded-md border text-sm font-medium",
-                  item.id === fold ? "border-brass bg-brass text-bg" : "border-line bg-surface text-fg",
-                )}
-              >
-                {item.name}
-              </button>
-            ))}
-          </div>
-          <p className="mt-2 text-sm text-pretty text-muted">{foldNote(fold)}</p>
-        </section>
-
         <div className="grid grid-cols-2 gap-2">
           <Button onClick={() => useStudio.getState().toggleRun()} disabled={!ready}>
             {running ? <Pause className="size-4" /> : <Play className="size-4" />}
@@ -349,6 +366,7 @@ function Controls({ apiRef }: { apiRef: { current: FormaApi | null } }) {
             <RotateCcw className="size-4" />
             Reseed
           </Button>
+          <ImageSeed apiRef={apiRef} disabled={!ready} />
           <Button onClick={() => useStudio.getState().surprise()} disabled={!ready}>
             <Shuffle className="size-4" />
             Surprise
@@ -550,11 +568,23 @@ function Controls({ apiRef }: { apiRef: { current: FormaApi | null } }) {
             display={smooth === 0 ? "Off" : `${smooth}`}
             onChange={(value) => useStudio.getState().setSmooth(value)}
           />
+          <Range
+            label="Crisp"
+            min={0}
+            max={1}
+            step={0.01}
+            value={crisp}
+            display={crisp < 0.35 ? "Soft" : crisp < 0.72 ? "Firm" : "Print"}
+            onChange={(value) => useStudio.getState().setCrisp(value)}
+          />
         </div>
 
         <div className="flex flex-wrap gap-2">
           <Toggle label={invert ? "Recessed" : "Raised"} on={invert} onClick={() => useStudio.getState().toggleInvert()} />
           <Toggle label={boost ? "Boosted view" : "True scale"} on={boost} onClick={() => useStudio.getState().toggleBoost()} />
+          {make !== "relief" ? (
+            <Toggle label={hanger ? "Loop on" : "Loop off"} on={hanger} onClick={() => useStudio.getState().setHanger(!hanger)} />
+          ) : null}
         </div>
 
         <div>
@@ -651,6 +681,7 @@ function toSpec(state: ReturnType<typeof useStudio.getState>): PieceSpec {
     gamma: state.gamma,
     invert: state.invert,
     smooth: state.smooth,
+    crisp: state.crisp,
     printRes: state.printRes,
     threshold: state.threshold,
     rimMm: state.rimMm,
@@ -662,6 +693,7 @@ function toSpec(state: ReturnType<typeof useStudio.getState>): PieceSpec {
     seam: state.seam,
     wrap: state.edge === "tile",
     reliefScale: 1,
+    hanger: state.hanger,
   };
 }
 
@@ -687,12 +719,16 @@ function recipeLive(
     sheetCols: number;
     sheetRows: number;
     seam: string;
+    hanger?: boolean;
+    foldSides?: number;
   },
 ) {
   const patch = recipe.patch;
   if (now.presetId !== patch.presetId || now.make !== patch.make || now.outline !== patch.outline) return false;
   if (now.fold !== patch.fold || now.edge !== patch.edge || now.invert !== patch.invert) return false;
   if (now.wall !== patch.wall) return false;
+  if ((now.hanger ?? false) !== (patch.hanger ?? false)) return false;
+  if (patch.foldSides !== undefined && now.foldSides !== patch.foldSides) return false;
   if (Math.abs(now.plateW - patch.plateW) > 0.6) return false;
   if (Math.abs(now.threshold - patch.threshold) > 0.02) return false;
   if (Math.abs(now.rimMm - patch.rimMm) > 0.2) return false;
@@ -729,6 +765,78 @@ function caption(make: string, boost: boolean) {
     : "Preview matches the STL, in millimeters.";
 }
 
+function AccountRow() {
+  const { user, isPending } = useCurrentUserState();
+  if (isPending) return <div className="h-11 animate-pulse rounded-md bg-surface" />;
+  if (!user) {
+    return (
+      <Link
+        to="/login"
+        className="flex h-11 items-center justify-center rounded-md border border-line bg-surface text-sm font-medium"
+      >
+        Sign in to save pieces
+      </Link>
+    );
+  }
+  return (
+    <div className="flex h-11 items-center overflow-hidden">
+      <UserButton />
+    </div>
+  );
+}
+
+function WearNow({
+  now,
+}: {
+  now: {
+    presetId: string;
+    make: string;
+    outline: string;
+    fold: string;
+    foldSides: number;
+    edge: string;
+    plateW: number;
+    threshold: number;
+    rimMm: number;
+    reliefMm: number;
+    wall: number;
+    invert: boolean;
+    sheetCols: number;
+    sheetRows: number;
+    seam: string;
+    hanger: boolean;
+  };
+}) {
+  return (
+    <section>
+      <div className="mb-2 flex items-baseline justify-between gap-3">
+        <h2 className="text-xl">Wear</h2>
+        <p className="text-sm text-muted">Jewelry, in millimeters</p>
+      </div>
+      <div className="grid grid-cols-2 gap-2">
+        {WEAR.map((recipe) => {
+          const on = recipeLive(recipe, now);
+          return (
+            <button
+              key={recipe.id}
+              type="button"
+              aria-pressed={on}
+              onClick={() => useStudio.getState().applyRecipe(recipe.id)}
+              className={cn(
+                "flex min-h-11 flex-col items-start rounded-md border px-3 py-2 text-left",
+                on ? "border-brass bg-brass text-bg" : "border-line bg-surface text-fg",
+              )}
+            >
+              <span className="text-sm font-medium">{recipe.name}</span>
+              <span className={cn("text-sm", on ? "opacity-80" : "text-muted")}>{recipe.note}</span>
+            </button>
+          );
+        })}
+      </div>
+    </section>
+  );
+}
+
 function footerCopy(make: string) {
   if (make === "sheet") {
     return "STL is one plate of separate tiles, millimeters, Z up. SVG cuts are red, for a laser.";
@@ -739,7 +847,175 @@ function footerCopy(make: string) {
   return "STL is a solid plate, millimeters, Z up. SVG engraves the lines in black and scores the outline in red.";
 }
 
-function Count({ label, value, onChange }: { label: string; value: number; onChange: (value: number) => void }) {
+function FilamentPick({ id }: { id: string }) {
+  return (
+    <section>
+      <div className="mb-2 flex items-baseline justify-between gap-3">
+        <h2 className="text-xl">Filament</h2>
+        <p className="text-sm text-muted">{FILAMENTS.find((item) => item.id === id)?.name ?? "White"}</p>
+      </div>
+      <div className="flex max-w-full gap-2 overflow-x-auto pb-1" role="radiogroup" aria-label="Filament">
+        {FILAMENTS.map((item) => (
+          <button
+            key={item.id}
+            type="button"
+            role="radio"
+            aria-checked={item.id === id}
+            aria-label={item.name}
+            title={item.name}
+            onClick={() => useStudio.getState().setFilament(item.id)}
+            className={cn(
+              "grid size-11 shrink-0 place-items-center rounded-full border",
+              item.id === id ? "border-brass" : "border-line",
+            )}
+          >
+            <span className="size-7 rounded-full" style={{ background: item.color, boxShadow: `inset 0 0 0 1px ${item.bed}` }} />
+          </button>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function Mirror({ fold, sides }: { fold: FoldId; sides: number }) {
+  const radial = isRadial(fold);
+  const note = !radial
+    ? (FOLDS.find((item) => item.id === fold)?.note ?? "")
+    : `${mirrorCount(fold, sides)}-fold kaleidoscope.`;
+  const mode = radial ? "kaleido" : fold === "stack" ? "split" : fold;
+  return (
+    <section>
+      <div className="mb-2 flex items-baseline justify-between gap-3">
+        <h2 className="text-xl">Mirror</h2>
+        <p className="text-sm text-pretty text-muted">{note}</p>
+      </div>
+      <div className="grid grid-cols-4 gap-2">
+        {(
+          [
+            ["open", "Off"],
+            ["split", "Mirror"],
+            ["quad", "Quad"],
+            ["kaleido", "Kaleido"],
+          ] as const
+        ).map(([id, name]) => (
+          <button
+            key={id}
+            type="button"
+            aria-pressed={mode === id}
+            onClick={() => {
+              if (id === "kaleido") {
+                if (!radial) useStudio.getState().setFold("kaleido");
+                return;
+              }
+              useStudio.getState().setFold(id);
+            }}
+            className={cn(
+              "h-11 rounded-md border text-sm font-medium",
+              mode === id ? "border-brass bg-brass text-bg" : "border-line bg-surface text-fg",
+            )}
+          >
+            {name}
+          </button>
+        ))}
+      </div>
+      {fold === "split" || fold === "stack" ? (
+        <div className="mt-2 grid grid-cols-2 gap-2">
+          {(
+            [
+              ["split", "Side"],
+              ["stack", "Up"],
+            ] as const
+          ).map(([id, name]) => (
+            <button
+              key={id}
+              type="button"
+              aria-pressed={fold === id}
+              onClick={() => useStudio.getState().setFold(id)}
+              className={cn(
+                "h-11 rounded-md border text-sm font-medium",
+                fold === id ? "border-brass bg-brass text-bg" : "border-line bg-surface text-fg",
+              )}
+            >
+              {name}
+            </button>
+          ))}
+        </div>
+      ) : null}
+      {radial ? (
+        <div className="mt-2">
+          <Count
+            label="Vertices"
+            value={mirrorCount(fold, sides)}
+            min={3}
+            max={12}
+            onChange={(value) => useStudio.getState().setFoldSides(value)}
+          />
+        </div>
+      ) : null}
+    </section>
+  );
+}
+
+function ImageSeed({
+  apiRef,
+  disabled,
+}: {
+  apiRef: { current: FormaApi | null };
+  disabled: boolean;
+}) {
+  const inputRef = useRef<HTMLInputElement>(null);
+  return (
+    <>
+      <input
+        ref={inputRef}
+        type="file"
+        accept="image/*"
+        className="absolute h-px w-px overflow-hidden opacity-0"
+        aria-hidden
+        tabIndex={-1}
+        onChange={(event) => {
+          const file = event.target.files?.[0];
+          event.target.value = "";
+          if (!file) return;
+          void (async () => {
+            try {
+              const bitmap = await createImageBitmap(file);
+              const luma = imageLuma(bitmap, SIM_SIZE);
+              bitmap.close();
+              const api = apiRef.current;
+              if (!api) {
+                useStudio.getState().setNotice("The bath isn’t ready yet.");
+                return;
+              }
+              api.seedImage(luma);
+              useStudio.getState().setNotice(file.name);
+            } catch {
+              useStudio.getState().setNotice("Could not read that image.");
+            }
+          })();
+        }}
+      />
+      <Button disabled={disabled} onClick={() => inputRef.current?.click()}>
+        <ImagePlus className="size-4" />
+        From image
+      </Button>
+    </>
+  );
+}
+
+function Count({
+  label,
+  value,
+  onChange,
+  min = 1,
+  max = 5,
+}: {
+  label: string;
+  value: number;
+  onChange: (value: number) => void;
+  min?: number;
+  max?: number;
+}) {
   return (
     <div className="flex h-11 items-center justify-between gap-1 rounded-md border border-line bg-surface pl-3">
       <span className="text-sm text-muted">{label}</span>
@@ -748,7 +1024,7 @@ function Count({ label, value, onChange }: { label: string; value: number; onCha
           type="button"
           className="grid h-11 w-11 place-items-center text-fg"
           aria-label={`Fewer ${label.toLowerCase()}`}
-          onClick={() => onChange(Math.max(1, value - 1))}
+          onClick={() => onChange(Math.max(min, value - 1))}
         >
           −
         </button>
@@ -757,7 +1033,7 @@ function Count({ label, value, onChange }: { label: string; value: number; onCha
           type="button"
           className="grid h-11 w-11 place-items-center text-fg"
           aria-label={`More ${label.toLowerCase()}`}
-          onClick={() => onChange(Math.min(5, value + 1))}
+          onClick={() => onChange(Math.min(max, value + 1))}
         >
           +
         </button>

@@ -14,7 +14,7 @@ export const Route = createRootRoute({
       {
         name: "description",
         content:
-          "Grow a Turing pattern, then cut a pierced grill, a sheet of maze tiles, or a carved plaque. Download STL or laser SVG.",
+          "Grow a Turing pattern and cut it into a printable pendant, earring, cuff, or plate. Download STL or laser SVG.",
       },
       { name: "theme-color", content: "#12110e" },
     ],

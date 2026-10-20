@@ -23,6 +23,7 @@ export function buildMask(
     threshold: number;
     rimMm: number;
     wall: number;
+    hanger?: boolean;
   },
 ): MaskResult {
   const { cols: c, rows: r } = { cols, rows };
@@ -76,7 +77,36 @@ export function buildMask(
     reach += cell;
     attached = keepFromRim(mask, c, r, rim);
   }
+  if (opts.hanger) punchHanger(attached.mask, inside, c, r, opts.width, opts.depth);
   return { mask: attached.mask, dropped: attached.dropped };
+}
+
+function punchHanger(
+  mask: Uint8Array,
+  inside: Uint8Array,
+  cols: number,
+  rows: number,
+  width: number,
+  depth: number,
+) {
+  const cw = width / cols;
+  const cd = depth / rows;
+  const holeR = Math.min(1.8, Math.max(1.15, Math.min(width, depth) * 0.055));
+  const ring = Math.max(1.2, holeR * 0.85);
+  const cy = depth / 2 - (holeR + ring + 0.5);
+  const tab = cy - (holeR + ring + 2.4);
+  for (let y = 0; y < rows; y++) {
+    for (let x = 0; x < cols; x++) {
+      const i = y * cols + x;
+      if (!inside[i]) continue;
+      const px = -width / 2 + (x + 0.5) * cw;
+      const py = depth / 2 - (y + 0.5) * cd;
+      if (Math.abs(px) <= ring * 0.85 && py <= cy && py >= tab) mask[i] = 1;
+      const d = Math.hypot(px, py - cy);
+      if (d <= holeR + ring) mask[i] = 1;
+      if (d <= holeR) mask[i] = 0;
+    }
+  }
 }
 
 function dilate(mask: Uint8Array, cols: number, rows: number, inside: Uint8Array) {

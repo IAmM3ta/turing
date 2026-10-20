@@ -30,11 +30,17 @@ The recipe is only a starting point.
 
 **Change the chemistry.** Under **Bath**, try Worms for connected strands, Maze for corridors, Print for fingerprint ridges, or Holes for pits. Open **Chemistry** only if you want to move Feed and Kill by hand. Small moves matter. If the field dies to a flat color, tap **Reseed** or **Restore**.
 
-**Fold it.** **Hex** makes a six-fold medallion. **Quad** mirrors both ways. **Open** is the raw field. Turn **Tile** on, with Fold set to Open, when a sheet should repeat without a seam.
+**Pick the filament.** The chips at the top of the rail are the plastic you intend to print. White is the default, drawn on a black bed. The 3D preview uses the same color. The STL does not store color; set the filament in the slicer to match.
+
+**Mirror it.** **Off** is the raw field. **Mirror** copies left and right; **Side** and **Up** choose the axis. **Quad** folds both ways. **Kaleido** is a kaleidoscope, and **Vertices** sets how many wedges meet in the middle, from 3 to 12. Turn **Tile** on, with Mirror set to Off, when a sheet should repeat without a seam.
+
+**Seed from a picture.** **From image** cover-crops a photo into the bath. A drawing on white paper is inverted so the marks become the chemical. Let it grow for a few hundred cycles; the upload is a seed, not a stamp that stays frozen.
 
 **Paint.** Drag on the field while the button says **Seeding**. That plants chemical where you touch, and the pattern grows out of the stroke. Switch to **Erasing** to wipe a region back to empty. **Brush** sets the stroke: Fine, Medium, or Wide.
 
 **Pace** is steps per frame. Faster fills the field sooner and is harder to catch at a particular moment. **Space** pauses so you can paint or export the frame you like. **R** reseeds from scratch. **Surprise** jumps to another chemistry. **Wipe** clears the bath.
+
+**Crisp** sits with Bite and Smooth. Leave it on **Print** unless you want softer walls. Smooth blurs first; Crisp then cuts the edge back so the mesh matches the sharp lines on screen.
 
 Pause when the preview looks like the object, not when a number looks right.
 
@@ -57,7 +63,7 @@ Then set millimeters:
 - **Walls** thickens the structure between holes. **Printable** is the default for a 0.4 mm nozzle. **Hairline** looks finer on screen and often fails on the printer because the walls are thinner than one extruded line.
 - **Gap**, on a tile sheet, is the space between squares. 0.6–0.8 mm lets you snap them apart. **Touching** fuses them into one panel.
 - **Base** and **Relief**, on a plaque. A base of 3–4 mm resists warping. A relief of about 0.8–1.6 mm reads as carving without becoming a tall fin.
-- **Bite** and **Smooth** change contrast and blur before meshing. Raise Bite if the pattern looks washed out. One or two steps of Smooth takes the pixel crunch off a relief.
+- **Bite**, **Smooth**, and **Crisp** change contrast, blur, and edge hardness before meshing. Raise Bite if the pattern looks washed out. One step of Smooth takes the pixel crunch off, then leave Crisp on **Print** so the walls stay steep. Drop Crisp toward Soft only when you want a rounded relief.
 - **Print density.** Use **Fine** for a real print. **Draft** is for checking the shape. **Dense** is for a large, detailed plaque and makes a heavier STL.
 
 Read the line under the buttons. It reports triangle count and file size. A lattice of well under a megabyte is normal. If the footer says loose islands were left out, the exporter dropped fragments that were not connected to the rim so the part stays one piece. If it says there is nothing solid to export, open fewer holes or add a rim and try again.
@@ -111,6 +117,8 @@ A 110 mm grill at 0.20 mm layers and 3.2 mm thickness is a short print, usually 
 **Maze tiles.** One STL contains the whole sheet, with gaps already modeled. Slice it flat. After printing, flex the sheet or cut the bridges to separate the tiles. If neighboring tiles fused, the gap was smaller than your extrusion. Export again with Gap at 0.8 mm or 1.0 mm. If you wanted one solid panel, set Gap to **Touching** before exporting. Reduce columns and rows until the sheet fits the bed with a few millimeters of margin.
 
 **Any lattice.** A 0.4 mm nozzle cannot hold a wall thinner than one line, and a reliable wall is two lines, about 0.8–1.0 mm. **Hairline** is for looking, not for printing, unless you have a smaller nozzle and you know the slicer is keeping those features.
+
+**Wear.** Pendant, charm, and earrings are small lattices with **Loop** on, so a hole is already punched at the top. Print them flat, loop up, with no supports. A 16 mm earring wants **Fine** or **Dense** and a 0.12–0.16 mm layer so the rim does not close. The cuff is a flat 118×22 mm strip: print it flat, then heat-form it around a mandrel or stitch it to a band. The brooch and signet are low relief, face up, no loop. Do not scale a jewelry file up to “make the holes printable”; raise **Walls** or **Thickness** and export again.
 
 ## 7. Check the finished print
 

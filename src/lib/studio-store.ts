@@ -2,6 +2,7 @@ import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import { PRESETS, presetById, type FoldId } from "@/lib/rd/presets";
 import { recipeById, type MakeId } from "@/lib/rd/recipes";
+import type { FavoriteSpec } from "@/lib/favorite-spec";
 import type { SeamId } from "@/lib/rd/sample";
 import type { OutlineId } from "@/lib/rd/shape";
 
@@ -13,6 +14,7 @@ type StudioData = {
   kill: number;
   rate: number;
   fold: FoldId;
+  foldSides: number;
   edge: EdgeMode;
   running: boolean;
   brush: number;
@@ -20,6 +22,7 @@ type StudioData = {
   gamma: number;
   invert: boolean;
   smooth: number;
+  crisp: number;
   plateW: number;
   plateD: number;
   baseMm: number;
@@ -36,6 +39,8 @@ type StudioData = {
   sheetCols: number;
   sheetRows: number;
   seam: SeamId;
+  filamentId: string;
+  hanger: boolean;
   seedNonce: number;
   cycles: number;
   engineReady: boolean;
@@ -49,8 +54,10 @@ type StudioActions = {
   setBrush: (brush: number) => void;
   setGamma: (gamma: number) => void;
   setSmooth: (smooth: number) => void;
+  setCrisp: (crisp: number) => void;
   setPlate: (key: "plateW" | "plateD" | "baseMm" | "reliefMm", value: number) => void;
   setFold: (fold: FoldId) => void;
+  setFoldSides: (foldSides: number) => void;
   setEdge: (edge: EdgeMode) => void;
   setPrintRes: (printRes: number) => void;
   setMake: (make: MakeId) => void;
@@ -62,6 +69,9 @@ type StudioActions = {
   setGap: (gapMm: number) => void;
   setSheet: (sheetCols: number, sheetRows: number) => void;
   setSeam: (seam: SeamId) => void;
+  setFilament: (filamentId: string) => void;
+  setHanger: (hanger: boolean) => void;
+  applySpec: (spec: FavoriteSpec, notice?: string) => void;
   applyRecipe: (id: string) => void;
   toggleRun: () => void;
   toggleErase: () => void;
@@ -84,6 +94,7 @@ const initial: StudioData = {
   kill: presetById(start.patch.presetId).kill,
   rate: 12,
   fold: start.patch.fold,
+  foldSides: 6,
   edge: start.patch.edge,
   running: true,
   brush: 0.03,
@@ -91,6 +102,7 @@ const initial: StudioData = {
   gamma: start.patch.gamma,
   invert: start.patch.invert,
   smooth: start.patch.smooth,
+  crisp: 0.82,
   plateW: start.patch.plateW,
   plateD: start.patch.plateD,
   baseMm: start.patch.baseMm,
@@ -107,6 +119,8 @@ const initial: StudioData = {
   sheetCols: start.patch.sheetCols,
   sheetRows: start.patch.sheetRows,
   seam: start.patch.seam,
+  filamentId: "white",
+  hanger: false,
   seedNonce: 1,
   cycles: 0,
   engineReady: false,
@@ -123,8 +137,10 @@ export const useStudio = create<StudioData & StudioActions>()(
       setBrush: (brush) => set({ brush }),
       setGamma: (gamma) => set({ gamma }),
       setSmooth: (smooth) => set({ smooth }),
+      setCrisp: (crisp) => set({ crisp }),
       setPlate: (key, value) => set({ [key]: value }),
       setFold: (fold) => set({ fold }),
+      setFoldSides: (foldSides) => set({ foldSides: clamp(Math.round(foldSides), 3, 12), fold: "kaleido" }),
       setEdge: (edge) => set({ edge }),
       setPrintRes: (printRes) => set({ printRes }),
       setMake: (make) => set({ make }),
@@ -136,11 +152,22 @@ export const useStudio = create<StudioData & StudioActions>()(
       setGap: (gapMm) => set({ gapMm }),
       setSheet: (sheetCols, sheetRows) => set({ sheetCols, sheetRows }),
       setSeam: (seam) => set({ seam }),
+      setFilament: (filamentId) => set({ filamentId }),
+      setHanger: (hanger) => set({ hanger }),
+      applySpec: (spec, notice) =>
+        set({
+          ...spec,
+          seedNonce: get().seedNonce + 1,
+          running: true,
+          notice: notice ?? "",
+        }),
       applyRecipe: (id) => {
         const recipe = recipeById(id);
         const preset = presetById(recipe.patch.presetId);
         set({
           ...recipe.patch,
+          foldSides: recipe.patch.foldSides ?? get().foldSides,
+          hanger: recipe.patch.hanger ?? false,
           feed: preset.feed,
           kill: preset.kill,
           seedNonce: get().seedNonce + 1,
@@ -169,13 +196,14 @@ export const useStudio = create<StudioData & StudioActions>()(
       reseed: () => set({ seedNonce: get().seedNonce + 1, notice: "" }),
       surprise: () => {
         const preset = PRESETS[Math.floor(Math.random() * PRESETS.length)] ?? PRESETS[0];
-        const folds: FoldId[] = ["open", "split", "stack", "quad", "tri", "hex", "oct"];
+        const folds: FoldId[] = ["open", "split", "quad", "kaleido"];
         const fold = folds[Math.floor(Math.random() * folds.length)] ?? "hex";
         set({
           presetId: preset.id,
           feed: clamp(preset.feed + (Math.random() - 0.5) * 0.004, 0.002, 0.1),
           kill: clamp(preset.kill + (Math.random() - 0.5) * 0.0025, 0.02, 0.073),
           fold,
+          foldSides: 3 + Math.floor(Math.random() * 8),
           seedNonce: get().seedNonce + 1,
           running: true,
           notice: `${preset.name} · ${fold}`,
@@ -194,12 +222,14 @@ export const useStudio = create<StudioData & StudioActions>()(
         kill: state.kill,
         rate: state.rate,
         fold: state.fold,
+        foldSides: state.foldSides,
         edge: state.edge,
         brush: state.brush,
         erase: state.erase,
         gamma: state.gamma,
         invert: state.invert,
         smooth: state.smooth,
+        crisp: state.crisp,
         plateW: state.plateW,
         plateD: state.plateD,
         baseMm: state.baseMm,
@@ -216,7 +246,20 @@ export const useStudio = create<StudioData & StudioActions>()(
         sheetCols: state.sheetCols,
         sheetRows: state.sheetRows,
         seam: state.seam,
+        filamentId: state.filamentId,
+        hanger: state.hanger,
       }),
+      merge: (persisted, current) => {
+        const saved = (persisted ?? {}) as Partial<StudioData>;
+        return {
+          ...current,
+          ...saved,
+          filamentId: saved.filamentId || "white",
+          crisp: typeof saved.crisp === "number" ? saved.crisp : 0.82,
+          foldSides: typeof saved.foldSides === "number" ? saved.foldSides : 6,
+          hanger: saved.hanger === true,
+        };
+      },
     },
   ),
 );
@@ -229,4 +272,6 @@ export type FormaApi = {
   readField: () => Float32Array | null;
   saveImage: (filename: string) => void;
   wipe: () => void;
+  seedImage: (luma: Uint8Array) => void;
+  thumbnail: () => string;
 };
